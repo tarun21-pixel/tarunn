@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gesture Controlled Home Automation</title>
+  
+  <!-- MediaPipe Libraries -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+
+  <style>
+    body { text-align: center; font-family: Arial; background: #f2f2f2; margin: 0; padding: 20px; }
+    h2 { margin-bottom: 10px; }
+    video, canvas { width: 480px; height: 360px; border-radius: 10px; }
+    .status { margin-top: 15px; font-size: 18px; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <h2>Gesture Controlled Home Automation 👋</h2>
+  
+  <!-- Camera and Output -->
+  <video id="input_video" autoplay playsinline></video>
+  <canvas id="output_canvas"></canvas>
+  
+  <div class="status" id="statusMsg">Waiting for gesture...</div>
+
+  <script>
+    // Replace with your Blynk Auth Token
+    const BLYNK_TOKEN = "bSA3M0QZo7soHSIThfl5HUDiS5FgD4lg";  
+    const LIGHT_PIN = "V0"; // Light on/off
+    const FAN_PIN = "V1"; // Fan on/off (can extend later)
+
+    async function sendCommand(pin, val) {
+      let url = `https://blynk.cloud/external/api/update?token=${BLYNK_TOKEN}&${pin}=${val}`;
+      try {
+        await fetch(url);
+        document.getElementById("statusMsg").innerText = `Sent: ${pin} → ${val}`;
+      } catch (err) {
+        document.getElementById("statusMsg").innerText = "⚠️ Error sending to Blynk";
+        console.error(err);
+      }
+    }
+
+    const videoElement = document.getElementById('input_video');
+    const canvasElement = document.getElementById('output_canvas');
+    const canvasCtx = canvasElement.getContext('2d');
+
+    const hands = new Hands({locateFile: (file) => {
+      return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+    }});
+
+    hands.setOptions({
+      maxNumHands: 1,
+      modelComplexity: 1,
+      minDetectionConfidence: 0.7,
+      minTrackingConfidence: 0.7
+    });
+
+    hands.onResults(onResults);
+
+    const camera = new Camera(videoElement, {
+      onFrame: async () => { await hands.send({image: videoElement}); },
+      width: 480, height: 360
+    });
+    camera.start();
+
+    function onResults(results) {
+      canvasCtx.save();
+      canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+      canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+
+      if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+        const landmarks = results.multiHandLandmarks[0];
+        drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {color: '#00FF00', lineWidth: 2});
+        drawLandmarks(canvasCtx, landmarks, {color: '#FF0000', lineWidth: 1});
+
+        let thumbTip = landmarks[4];
+        let indexTip = landmarks[8];
+
+        // Thumbs Up → Light ON
+        if (thumbTip.y < indexTip.y - 0.05) {
+          sendCommand(LIGHT_PIN, 1);
+        } 
+        // Thumbs Down → Light OFF
+        else if (thumbTip.y > indexTip.y + 0.05) {
+          sendCommand(LIGHT_PIN, 0);
+        }
+      }
+      canvasCtx.restore();
+    }
+  </script>
+</body>
+</html>
